@@ -37,6 +37,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run check:dist
 
   php:
     name: PHP ${{ matrix.php }}
@@ -64,3 +65,53 @@ jobs:
       - name: Check PHP 7.2 compatibility
         if: matrix.php == '8.4'
         run: composer lint:compat
+
+      - name: Check the generated config is up to date
+        if: matrix.php == '8.4'
+        run: |
+          composer build:config
+          git diff --exit-code php/generated
+
+  parity:
+    name: JS/PHP parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - run: npm ci && npm run build
+        working-directory: js
+
+      - run: composer update --no-interaction --no-progress
+
+      # Fuzzed inputs run through the built JS port, then compared against the PHP port.
+      - run: npm run parity:generate -- "$RUNNER_TEMP/parity.jsonl" 100000
+        working-directory: js
+
+      - run: composer parity:check -- "$RUNNER_TEMP/parity.jsonl"
+
+  # The single check required by the trunk ruleset, so it doesn't need
+  # updating when jobs or matrix entries change. Runs even when a job fails,
+  # since a skipped required check would count as passing.
+  ci:
+    name: CI
+    if: always()
+    needs: [ js, php, parity ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every job passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1

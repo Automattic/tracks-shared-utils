@@ -3,7 +3,7 @@
 namespace Automattic\TracksSharedUtils;
 
 /**
- * Lazily loads shared/url-sanitization.json.
+ * Lazily loads the config generated from shared/url-sanitization.json.
  *
  * @internal Use the functions in functions.php instead.
  */
@@ -16,12 +16,7 @@ final class Config {
 	 */
 	public static function get(): array {
 		if ( null === self::$data ) {
-			$path = __DIR__ . '/../../shared/url-sanitization.json';
-			$data = json_decode( (string) file_get_contents( $path ), true );
-			if ( ! is_array( $data ) ) {
-				throw new \RuntimeException( 'Could not load ' . $path );
-			}
-			self::$data = $data;
+			self::$data = require __DIR__ . '/../generated/url-sanitization.php';
 		}
 		return self::$data;
 	}
