@@ -1,0 +1,103 @@
+# tracks-shared-utils
+
+One shared allowlist and one sanitization algorithm for URLs sent to Tracks, published as matching JS and PHP packages.
+
+`sanitizeUrl` removes query params that aren't on the allowlist, sanitizes URLs nested in param values (like `redirect_to`), and removes fragments:
+
+```
+https://wordpress.com/log-in?redirect_to=https%3A%2F%2Fwordpress.com%2Fcheckout%3Futm_source%3Demail%26extra%3D1&notAllowed=1#section
+→ https://wordpress.com/log-in?redirect_to=https%3A%2F%2Fwordpress.com%2Fcheckout%3Futm_source%3Demail
+```
+
+The full behavior is defined in **[SPEC.md](SPEC.md)**. Both ports must pass every case in [`shared/test-cases.json`](shared/test-cases.json).
+
+## Usage
+
+### JavaScript / TypeScript
+
+```sh
+npm install @automattic/tracks-shared-utils
+```
+
+```ts
+import { sanitizeUrl, URL_PROPS } from '@automattic/tracks-shared-utils';
+
+for ( const prop of URL_PROPS ) {
+	if ( typeof props[ prop ] === 'string' ) {
+		props[ prop ] = sanitizeUrl( props[ prop ] );
+	}
+}
+```
+
+Both ESM and CommonJS builds are included, along with TypeScript types. `ALLOWED_PARAMS` is also exported.
+
+### PHP (7.2+)
+
+```sh
+composer require automattic/tracks-shared-utils
+```
+
+```php
+use function Automattic\TracksSharedUtils\sanitize_url;
+use function Automattic\TracksSharedUtils\url_props;
+
+foreach ( url_props() as $prop ) {
+	if ( isset( $props[ $prop ] ) && is_string( $props[ $prop ] ) ) {
+		$props[ $prop ] = sanitize_url( $props[ $prop ] );
+	}
+}
+```
+
+`allowed_params()` is also available.
+
+## Development
+
+### Repo layout
+
+```
+shared/url-sanitization.json   # the allowlist, URL props and limits (source of truth)
+shared/test-cases.json         # input → expected cases, run by both ports
+js/                            # TypeScript port (npm package)
+php/                           # PHP port (Composer package; composer.json is at the root)
+SPEC.md                        # the algorithm both ports implement
+```
+
+### JS
+
+Requires Node 22.12+ (or 24+).
+
+```sh
+cd js
+npm install
+npm test            # run the shared cases with Vitest
+npm run typecheck   # tsc --noEmit
+npm run build       # ESM + CJS + type declarations into js/dist
+```
+
+### PHP
+
+Requires PHP 7.2+ and Composer. Run these from the repo root:
+
+```sh
+composer install
+composer test          # run the shared cases with PHPUnit
+composer lint:compat   # check that the code stays PHP 7.2-compatible
+```
+
+### Changing behavior or the allowlist
+
+1. Edit `shared/url-sanitization.json` and/or add cases to `shared/test-cases.json`. For a behavior change, update `SPEC.md` too.
+2. Update **both** ports until `npm test` and `composer test` pass.
+
+CI runs both suites on every pull request.
+
+### Releasing
+
+The two packages share one version. Bump `version` in `js/package.json`, tag the commit `vX.Y.Z`, then publish:
+
+- **Composer:** Packagist picks up the tag.
+- **npm:** run `npm publish` from `js/`. This runs typecheck, tests and build first.
+
+## License
+
+[GPL-2.0-or-later](LICENSE)

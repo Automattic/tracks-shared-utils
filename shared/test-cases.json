@@ -1,0 +1,247 @@
+[
+	{
+		"description": "keeps an allowlisted param",
+		"input": "https://wordpress.com/plans?tab=monthly",
+		"expected": "https://wordpress.com/plans?tab=monthly"
+	},
+	{
+		"description": "drops a param that is not allowlisted",
+		"input": "https://wordpress.com/plans?tab=monthly&notAllowed=abc",
+		"expected": "https://wordpress.com/plans?tab=monthly"
+	},
+	{
+		"description": "removes the ? when every param is dropped",
+		"input": "https://wordpress.com/?notAllowed=abc&extra=x",
+		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "leaves a URL without a query unchanged",
+		"input": "https://wordpress.com/start",
+		"expected": "https://wordpress.com/start"
+	},
+	{
+		"description": "removes an empty query",
+		"input": "https://wordpress.com/?",
+		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "keeps param order and drops disallowed params in between",
+		"input": "https://wordpress.com/?b_extra=1&tab=a&ref=b&x=2&gclid=c",
+		"expected": "https://wordpress.com/?tab=a&ref=b&gclid=c"
+	},
+	{
+		"description": "copies scheme, host, port and path verbatim without normalizing",
+		"input": "HTTPS://WordPress.COM:443/Path/?tab=a",
+		"expected": "HTTPS://WordPress.COM:443/Path/?tab=a"
+	},
+	{
+		"description": "removes the fragment",
+		"input": "https://wordpress.com/plans?tab=monthly#extra=abc",
+		"expected": "https://wordpress.com/plans?tab=monthly"
+	},
+	{
+		"description": "removes the fragment when there is no query",
+		"input": "https://wordpress.com/#section",
+		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "treats a ? inside the fragment as part of the fragment",
+		"input": "https://wordpress.com/#/path?notAllowed=1",
+		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "keeps utm_ params via the prefix rule, including unlisted ones",
+		"input": "https://wordpress.com/?utm_source=email&utm_campaign=spring&utm_newthing=x",
+		"expected": "https://wordpress.com/?utm_source=email&utm_campaign=spring&utm_newthing=x"
+	},
+	{
+		"description": "matches the prefix only at the start of the name",
+		"input": "https://wordpress.com/?my_utm_source=x&utm_=y",
+		"expected": "https://wordpress.com/?utm_=y"
+	},
+	{
+		"description": "requires exact names to match the whole name",
+		"input": "https://wordpress.com/?tabs=x&page2=y&tab=z",
+		"expected": "https://wordpress.com/?tab=z"
+	},
+	{
+		"description": "matches names case-insensitively and keeps the original case",
+		"input": "https://wordpress.com/?UTM_Source=email&TAB=plans&partnerbundle=x&PartnerBundle=y",
+		"expected": "https://wordpress.com/?UTM_Source=email&TAB=plans&partnerbundle=x&PartnerBundle=y"
+	},
+	{
+		"description": "matches on the decoded name and outputs the raw name",
+		"input": "https://wordpress.com/?utm%5Fsource=x&T%41B=y",
+		"expected": "https://wordpress.com/?utm%5Fsource=x&T%41B=y"
+	},
+	{
+		"description": "does not match a name with trailing + (decodes to a space)",
+		"input": "https://wordpress.com/?ref+=x&ref=y",
+		"expected": "https://wordpress.com/?ref=y"
+	},
+	{
+		"description": "drops a name that cannot be decoded and is not allowlisted",
+		"input": "https://wordpress.com/?ta%zzb=1&tab=2",
+		"expected": "https://wordpress.com/?tab=2"
+	},
+	{
+		"description": "keeps every occurrence of a repeated key",
+		"input": "https://wordpress.com/?tab=a&tab=b",
+		"expected": "https://wordpress.com/?tab=a&tab=b"
+	},
+	{
+		"description": "drops array-style keys unless the literal name is allowlisted",
+		"input": "https://wordpress.com/?tab[]=a&tab%5B%5D=b&ref=c",
+		"expected": "https://wordpress.com/?ref=c"
+	},
+	{
+		"description": "keeps allowlisted params with no value",
+		"input": "https://wordpress.com/?flags&notAllowed",
+		"expected": "https://wordpress.com/?flags"
+	},
+	{
+		"description": "keeps allowlisted params with an empty value",
+		"input": "https://wordpress.com/?ref=&notAllowed=",
+		"expected": "https://wordpress.com/?ref="
+	},
+	{
+		"description": "ignores empty segments",
+		"input": "https://wordpress.com/?&&ref=a&&",
+		"expected": "https://wordpress.com/?ref=a"
+	},
+	{
+		"description": "splits name and value on the first =",
+		"input": "https://wordpress.com/?ref=a=b",
+		"expected": "https://wordpress.com/?ref=a=b"
+	},
+	{
+		"description": "keeps non-URL values verbatim, including + and %25",
+		"input": "https://wordpress.com/?query=50%25+off&keyword=a+b",
+		"expected": "https://wordpress.com/?query=50%25+off&keyword=a+b"
+	},
+	{
+		"description": "keeps values that cannot be decoded verbatim",
+		"input": "https://wordpress.com/?query=100%&ref=%E0%A4",
+		"expected": "https://wordpress.com/?query=100%&ref=%E0%A4"
+	},
+	{
+		"description": "does not treat a value containing ? as a URL unless it starts with /",
+		"input": "https://wordpress.com/?query=what%3F",
+		"expected": "https://wordpress.com/?query=what%3F"
+	},
+	{
+		"description": "keeps a relative path with no query (nothing to sanitize)",
+		"input": "https://wordpress.com/?next=%2Fwp-admin%2F",
+		"expected": "https://wordpress.com/?next=%2Fwp-admin%2F"
+	},
+	{
+		"description": "accepted limitation: a non-URL value containing an encoded & is kept",
+		"input": "https://wordpress.com/?ref=a%26notAllowed%3D1",
+		"expected": "https://wordpress.com/?ref=a%26notAllowed%3D1"
+	},
+	{
+		"description": "sanitizes the query of a nested URL",
+		"input": "https://wordpress.com/log-in?redirect_to=https%3A%2F%2Fwordpress.com%2Fcheckout%3Futm_source%3Demail%26notAllowed%3Dabc",
+		"expected": "https://wordpress.com/log-in?redirect_to=https%3A%2F%2Fwordpress.com%2Fcheckout%3Futm_source%3Demail"
+	},
+	{
+		"description": "removes the fragment of a nested URL",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fpath%3Ftab%3Da%23fragment",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fpath%3Ftab%3Da"
+	},
+	{
+		"description": "removes the ? of a nested URL when every nested param is dropped",
+		"input": "https://wordpress.com/?redirect_to=HTTPS%3A%2F%2FExample.com%2F%3FnotAllowed%3D1",
+		"expected": "https://wordpress.com/?redirect_to=HTTPS%3A%2F%2FExample.com%2F"
+	},
+	{
+		"description": "sanitizes a relative nested URL with a query",
+		"input": "https://wordpress.com/?next=%2Fwp-admin%2Fpost.php%3Fpost%3D12%26action%3Dedit%26extra%3Dabc",
+		"expected": "https://wordpress.com/?next=%2Fwp-admin%2Fpost.php%3Fpost%3D12"
+	},
+	{
+		"description": "sanitizes a protocol-relative nested URL",
+		"input": "https://wordpress.com/?next=%2F%2Fexample.com%2F%3FnotAllowed%3D1",
+		"expected": "https://wordpress.com/?next=%2F%2Fexample.com%2F"
+	},
+	{
+		"description": "sanitizes a nested URL with a non-http scheme",
+		"input": "https://wordpress.com/?ref=android-app%3A%2F%2Fcom.example%2F%3Fextra%3Dx",
+		"expected": "https://wordpress.com/?ref=android-app%3A%2F%2Fcom.example%2F"
+	},
+	{
+		"description": "detects nested URLs by value shape, not by param name",
+		"input": "https://wordpress.com/?ref=https%3A%2F%2Fexample.com%2F%3Fextra%3Dabc%26ref%3Dnewsletter",
+		"expected": "https://wordpress.com/?ref=https%3A%2F%2Fexample.com%2F%3Fref%3Dnewsletter"
+	},
+	{
+		"description": "re-encodes an unencoded nested URL even when nothing is removed",
+		"input": "https://wordpress.com/?redirect_to=https://wordpress.com/home",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fwordpress.com%2Fhome"
+	},
+	{
+		"description": "treats a literal + in a nested URL as a space and re-encodes it as %20",
+		"input": "https://wordpress.com/?redirect_to=https://example.com/search?query=a+b",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fsearch%3Fquery%3Da%20b"
+	},
+	{
+		"description": "keeps an encoded + in a nested URL as %2B",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fsearch%3Fquery%3Da%2Bb%26x%3D1",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fsearch%3Fquery%3Da%2Bb"
+	},
+	{
+		"description": "encodes UTF-8 in nested URLs",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fcaf%C3%A9%3Ftab%3D%C3%A9",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fcaf%C3%A9%3Ftab%3D%C3%A9"
+	},
+	{
+		"description": "encodes !'()* in re-encoded nested URLs (RFC 3986)",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F(a)%3Ftab%3D!%26ref%3D*'",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F%28a%29%3Ftab%3D%21%26ref%3D%2A%27"
+	},
+	{
+		"description": "drops an unencoded URL-shaped value that cannot be decoded",
+		"input": "https://wordpress.com/?redirect_to=https://example.com/?notAllowed=100%&tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "sanitizes a double-encoded nested URL and outputs it single-encoded",
+		"input": "https://wordpress.com/?redirect_to=https%253A%252F%252Fexample.com%252Fconnect%253FnotAllowed%253Dabc%2526utm_source%253Dwoo",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fconnect%3Futm_source%3Dwoo"
+	},
+	{
+		"description": "sanitizes three levels of nested URLs",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Fnext%3Dhttps%253A%252F%252Fb.com%252F%253Fnext%253Dhttps%25253A%25252F%25252Fc.com%25252F%25253Ftab%25253D3%252526notAllowed%25253D3%2526notAllowed%253D2%26notAllowed%3D1&notAllowed=0",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Fnext%3Dhttps%253A%252F%252Fb.com%252F%253Fnext%253Dhttps%25253A%25252F%25252Fc.com%25252F%25253Ftab%25253D3"
+	},
+	{
+		"description": "drops a param whose value is a fourth level of nesting",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Fnext%3Dhttps%253A%252F%252Fb.com%252F%253Fnext%253Dhttps%25253A%25252F%25252Fc.com%25252F%25253Ftab%25253D3%252526next%25253Dhttps%2525253A%2525252F%2525252Fd.com%2525252F%2525253Ftab%2525253D4",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Fnext%3Dhttps%253A%252F%252Fb.com%252F%253Fnext%253Dhttps%25253A%25252F%25252Fc.com%25252F%25253Ftab%25253D3"
+	},
+	{
+		"description": "counts each extra decode toward the depth limit",
+		"input": "https://wordpress.com/?redirect_to=https%253A%252F%252Fa.com%252F%253Fnext%253Dhttps%25253A%25252F%25252Fb.com%25252F%25253Ftab%25253D2%252526next%25253Dhttps%2525253A%2525252F%2525252Fc.com%2525252F%2525253Ftab%2525253D3",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Fnext%3Dhttps%253A%252F%252Fb.com%252F%253Ftab%253D2"
+	},
+	{
+		"description": "drops a value that is only URL-shaped after more decodes than the depth limit allows",
+		"input": "https://wordpress.com/?redirect_to=https%2525253A%2525252F%2525252Fa.com%2525252F%2525253FnotAllowed%2525253D1&tab=x",
+		"expected": "https://wordpress.com/?tab=x"
+	},
+	{
+		"description": "accepts a value that is URL-shaped after exactly maxDepth decodes",
+		"input": "https://wordpress.com/?redirect_to=https%25253A%25252F%25252Fa.com%25252F%25253Ftab%25253D1%252526notAllowed%25253D1",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fa.com%2F%3Ftab%3D1"
+	},
+	{
+		"description": "keeps a non-URL value that stops changing within maxDecodes",
+		"input": "https://wordpress.com/?query=%25252525252525252525",
+		"expected": "https://wordpress.com/?query=%25252525252525252525"
+	},
+	{
+		"description": "drops a value that is still changing after maxDecodes",
+		"input": "https://wordpress.com/?query=%2525252525252525252525&tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	}
+]

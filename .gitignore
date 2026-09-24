@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+vendor/
+.phpunit.result.cache
+.phpunit.cache/
+# Not committed: the library supports PHP 7.2+, so dev dependencies must resolve per PHP version.
+composer.lock
+
+# Copied in by `npm pack` / `npm publish` (see js/package.json prepack).
+/js/LICENSE
+/js/README.md

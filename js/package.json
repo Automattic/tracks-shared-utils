@@ -1,0 +1,54 @@
+{
+	"name": "@automattic/tracks-shared-utils",
+	"version": "0.1.0",
+	"description": "Shared allowlist and sanitization for URLs sent to Tracks.",
+	"license": "GPL-2.0-or-later",
+	"homepage": "https://github.com/Automattic/tracks-shared-utils#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Automattic/tracks-shared-utils.git",
+		"directory": "js"
+	},
+	"bugs": {
+		"url": "https://github.com/Automattic/tracks-shared-utils/issues"
+	},
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"LICENSE",
+		"README.md"
+	],
+	"sideEffects": false,
+	"scripts": {
+		"build": "tsup",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "npm run typecheck && npm test && npm run build",
+		"prepack": "cp ../LICENSE ../README.md .",
+		"postpack": "rm -f LICENSE README.md"
+	},
+	"devDependencies": {
+		"tsup": "^8.5.1",
+		"typescript": "~6.0.3",
+		"vitest": "^5.0.1"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}
