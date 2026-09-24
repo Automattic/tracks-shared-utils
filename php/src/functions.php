@@ -11,7 +11,7 @@ namespace Automattic\TracksSharedUtils;
 if ( ! function_exists( __NAMESPACE__ . '\sanitize_url' ) ) {
 	/**
 	 * Removes query params that aren't allowlisted, recursively sanitizes URLs
-	 * nested in param values, and strips fragments.
+	 * nested in param values, and strips userinfo and fragments.
 	 *
 	 * @param string $url An absolute URL.
 	 * @return string The sanitized URL.

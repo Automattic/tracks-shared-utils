@@ -13,8 +13,27 @@ const asciiLowercase = ( s: string ): string =>
 const exactNames = new Set( ALLOWED_PARAMS.exact.map( asciiLowercase ) );
 const prefixes = ALLOWED_PARAMS.prefixes.map( asciiLowercase );
 
-/** Form-urlencoded decode. Returns null on a malformed `%` or invalid UTF-8. */
+// A UTF-16 surrogate without its pair. encodeURIComponent() throws on these.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// The start of a URL with an authority: `scheme://` or protocol-relative `//`.
+const AUTHORITY_START = /^(?:[A-Za-z][A-Za-z0-9+.-]*:)?\/\//;
+
+// An authority's userinfo: everything up to its last `@`, including a
+// percent-encoded `@` (`%40`, `%2540`, …) left by double encoding.
+const USERINFO = /^[\s\S]*(?:@|%(?:25)*40)/i;
+
+// A `?` percent-encoded one or more times (`%3F`, `%253F`, …).
+const ENCODED_QUESTION_MARK = /%(?:25)*3F/i;
+
+/**
+ * Form-urlencoded decode. Returns null on a malformed `%`, invalid UTF-8, or a
+ * lone surrogate (the JS equivalent of invalid UTF-8 input in PHP).
+ */
 function decode( s: string ): string | null {
+	if ( LONE_SURROGATE.test( s ) ) {
+		return null;
+	}
 	try {
 		return decodeURIComponent( s.replace( /\+/g, ' ' ) );
 	} catch {
@@ -31,10 +50,19 @@ function encode( s: string ): string {
 }
 
 function isUrlShaped( s: string ): boolean {
-	return (
-		/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test( s ) ||
-		( s.charAt( 0 ) === '/' && s.indexOf( '?' ) !== -1 )
-	);
+	return AUTHORITY_START.test( s ) || s.indexOf( '?' ) !== -1;
+}
+
+/** Removes `userinfo@` from the authority of a URL's base (the part before any `?`). */
+function stripUserinfo( base: string ): string {
+	const match = AUTHORITY_START.exec( base );
+	if ( match === null ) {
+		return base;
+	}
+	const start = match[ 0 ].length;
+	const slash = base.indexOf( '/', start );
+	const userinfo = USERINFO.exec( slash === -1 ? base.slice( start ) : base.slice( start, slash ) );
+	return userinfo === null ? base : base.slice( 0, start ) + base.slice( start + userinfo[ 0 ].length );
 }
 
 function isAllowedName( rawName: string ): boolean {
@@ -43,42 +71,40 @@ function isAllowedName( rawName: string ): boolean {
 	return exactNames.has( name ) || prefixes.some( ( p ) => name.indexOf( p ) === 0 );
 }
 
-function sanitizeValue( rawValue: string, depth: number ): string | typeof DROP {
-	// chain[ i ] is the value after i decodes.
-	const chain = [ rawValue ];
-	while ( chain.length - 1 < MAX_DECODES ) {
-		const last = chain[ chain.length - 1 ];
-		const next = decode( last );
+/**
+ * @param minK The first layer that may be treated as a URL. Rechecks pass 2 to
+ *             skip the layer they already sanitized.
+ */
+function sanitizeValue( rawValue: string, depth: number, minK = 1 ): string | typeof DROP {
+	// Decode one layer at a time. `next` is the value after `k` decodes.
+	let layer = rawValue;
+	for ( let k = 1; ; k++ ) {
+		const next = decode( layer );
 		if ( next === null ) {
-			break;
+			// Decoding stopped early, so a query may be hidden in what's left.
+			return isUrlShaped( layer ) || ENCODED_QUESTION_MARK.test( layer ) ? DROP : rawValue;
 		}
-		chain.push( next );
-		if ( next === last ) {
-			break;
+		if ( k > MAX_DECODES ) {
+			// Still changing after the decode cap: too deeply encoded to reason about.
+			return next === layer ? rawValue : DROP;
 		}
-	}
-
-	// Still changing after the decode cap: too deeply encoded to reason about.
-	if ( chain.length - 1 === MAX_DECODES ) {
-		const last = chain[ MAX_DECODES ];
-		const next = decode( last );
-		if ( next !== null && next !== last ) {
-			return DROP;
+		if ( k >= minK && isUrlShaped( next ) ) {
+			if ( depth + k > MAX_DEPTH ) {
+				return DROP;
+			}
+			const sanitized = sanitizeAtDepth( next, depth + k );
+			// With no `?` left, a query may still be hidden under more encoding
+			// (`a%3Fextra%3D1`, `https://a.com/%3Fextra%3D1`). Check the layers below.
+			const recheck =
+				sanitized.indexOf( '?' ) === -1 &&
+				( ! isUrlShaped( sanitized ) || ENCODED_QUESTION_MARK.test( sanitized ) );
+			return recheck ? sanitizeValue( encode( sanitized ), depth + k - 1, 2 ) : encode( sanitized );
 		}
-	}
-
-	for ( let k = 1; k < chain.length; k++ ) {
-		if ( isUrlShaped( chain[ k ] ) ) {
-			return depth + k <= MAX_DEPTH ? encode( sanitizeAtDepth( chain[ k ], depth + k ) ) : DROP;
+		if ( next === layer ) {
+			return rawValue;
 		}
+		layer = next;
 	}
-
-	// An unencoded URL we can't decode can't be safely parsed.
-	if ( chain.length === 1 && isUrlShaped( rawValue ) ) {
-		return DROP;
-	}
-
-	return rawValue;
 }
 
 function sanitizeAtDepth( url: string, depth: number ): string {
@@ -87,9 +113,9 @@ function sanitizeAtDepth( url: string, depth: number ): string {
 
 	const q = withoutFragment.indexOf( '?' );
 	if ( q === -1 ) {
-		return withoutFragment;
+		return stripUserinfo( withoutFragment );
 	}
-	const base = withoutFragment.slice( 0, q );
+	const base = stripUserinfo( withoutFragment.slice( 0, q ) );
 
 	const kept: string[] = [];
 	for ( const segment of withoutFragment.slice( q + 1 ).split( '&' ) ) {
@@ -120,7 +146,7 @@ function sanitizeAtDepth( url: string, depth: number ): string {
 
 /**
  * Removes query params that aren't allowlisted, recursively sanitizes URLs
- * nested in param values, and strips fragments.
+ * nested in param values, and strips userinfo and fragments.
  *
  * @param url An absolute URL.
  * @returns The sanitized URL.

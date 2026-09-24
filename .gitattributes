@@ -1,7 +1,10 @@
 # Keep the Composer dist archive to what PHP consumers need.
 /.gitattributes export-ignore
+/.github export-ignore
 /.gitignore export-ignore
 /js export-ignore
+/php/bin export-ignore
 /php/tests export-ignore
 /phpunit.xml.dist export-ignore
-/shared/test-cases.json export-ignore
+# PHP loads the generated php/generated/url-sanitization.php instead.
+/shared export-ignore

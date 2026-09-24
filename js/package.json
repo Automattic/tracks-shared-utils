@@ -39,7 +39,9 @@
 		"build": "tsup",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "npm run typecheck && npm test && npm run build",
+		"check:dist": "node scripts/check-dist.mjs",
+		"parity:generate": "node scripts/parity-generate.mjs",
+		"prepublishOnly": "npm run typecheck && npm test && npm run build && npm run check:dist",
 		"prepack": "cp ../LICENSE ../README.md .",
 		"postpack": "rm -f LICENSE README.md"
 	},

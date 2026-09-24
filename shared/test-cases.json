@@ -20,6 +20,21 @@
 		"expected": "https://wordpress.com/start"
 	},
 	{
+		"description": "returns an empty string unchanged",
+		"input": "",
+		"expected": ""
+	},
+	{
+		"description": "sanitizes a relative top-level input",
+		"input": "/plans?tab=a&extra=1",
+		"expected": "/plans?tab=a"
+	},
+	{
+		"description": "sanitizes a top-level input that is only a query",
+		"input": "?extra=1&tab=a",
+		"expected": "?tab=a"
+	},
+	{
 		"description": "removes an empty query",
 		"input": "https://wordpress.com/?",
 		"expected": "https://wordpress.com/"
@@ -48,6 +63,46 @@
 		"description": "treats a ? inside the fragment as part of the fragment",
 		"input": "https://wordpress.com/#/path?notAllowed=1",
 		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "removes userinfo",
+		"input": "https://name:extra@wordpress.com/plans?tab=a&extra=1",
+		"expected": "https://wordpress.com/plans?tab=a"
+	},
+	{
+		"description": "removes userinfo when there is no query",
+		"input": "https://name@wordpress.com/plans#section",
+		"expected": "https://wordpress.com/plans"
+	},
+	{
+		"description": "removes userinfo up to the last @ in the authority",
+		"input": "https://name@extra@wordpress.com/",
+		"expected": "https://wordpress.com/"
+	},
+	{
+		"description": "removes userinfo and keeps the port",
+		"input": "https://name@wordpress.com:8080/?tab=a",
+		"expected": "https://wordpress.com:8080/?tab=a"
+	},
+	{
+		"description": "removes userinfo when the authority has no path",
+		"input": "https://name@wordpress.com?tab=a",
+		"expected": "https://wordpress.com?tab=a"
+	},
+	{
+		"description": "removes userinfo from a protocol-relative URL",
+		"input": "//name@wordpress.com/?tab=a",
+		"expected": "//wordpress.com/?tab=a"
+	},
+	{
+		"description": "removes userinfo ending in a percent-encoded @",
+		"input": "https://name%40extra%2540wordpress.com/?tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "keeps @ in the path and query",
+		"input": "https://wordpress.com/name@example.com?ref=name@example.com",
+		"expected": "https://wordpress.com/name@example.com?ref=name@example.com"
 	},
 	{
 		"description": "keeps utm_ params via the prefix rule, including unlisted ones",
@@ -82,6 +137,16 @@
 	{
 		"description": "drops a name that cannot be decoded and is not allowlisted",
 		"input": "https://wordpress.com/?ta%zzb=1&tab=2",
+		"expected": "https://wordpress.com/?tab=2"
+	},
+	{
+		"description": "lowercases names as ASCII only",
+		"input": "https://wordpress.com/?%E2%84%AAeyword=x&keyword=y",
+		"expected": "https://wordpress.com/?keyword=y"
+	},
+	{
+		"description": "does not match a name containing an encoded =",
+		"input": "https://wordpress.com/?tab%3Dextra=1&tab=2",
 		"expected": "https://wordpress.com/?tab=2"
 	},
 	{
@@ -125,9 +190,49 @@
 		"expected": "https://wordpress.com/?query=100%&ref=%E0%A4"
 	},
 	{
-		"description": "does not treat a value containing ? as a URL unless it starts with /",
-		"input": "https://wordpress.com/?query=what%3F",
-		"expected": "https://wordpress.com/?query=what%3F"
+		"description": "keeps an undecodable encoded URL with no query verbatim",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F100%",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F100%"
+	},
+	{
+		"description": "drops an undecodable value containing ?",
+		"input": "https://wordpress.com/?query=what?100%&tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "drops a value whose encoded ? is hidden behind a later decode failure",
+		"input": "https://wordpress.com/?redirect_to=https%253A%252F%252Fexample.com%252F%253Fextra%253D1%25zz&tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "drops a value whose ? is encoded more than once behind a decode failure",
+		"input": "https://wordpress.com/?query=a%25253Fextra%25253D1%25zz&tab=b",
+		"expected": "https://wordpress.com/?tab=b"
+	},
+	{
+		"description": "keeps a non-ASCII value verbatim",
+		"input": "https://wordpress.com/?query=café",
+		"expected": "https://wordpress.com/?query=café"
+	},
+	{
+		"description": "keeps %00 in a non-URL value verbatim",
+		"input": "https://wordpress.com/?ref=a%00b",
+		"expected": "https://wordpress.com/?ref=a%00b"
+	},
+	{
+		"description": "keeps lowercase hex in a non-URL value verbatim",
+		"input": "https://wordpress.com/?query=a%2fb",
+		"expected": "https://wordpress.com/?query=a%2fb"
+	},
+	{
+		"description": "outputs uppercase hex when re-encoding a nested URL written in lowercase hex",
+		"input": "https://wordpress.com/?redirect_to=https%3a%2f%2fexample.com%2f%3ftab%3da",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F%3Ftab%3Da"
+	},
+	{
+		"description": "sanitizes the query of any value containing ?, even if it is not a URL",
+		"input": "https://wordpress.com/?query=what%3Fextra%3D1&tab=a",
+		"expected": "https://wordpress.com/?query=what&tab=a"
 	},
 	{
 		"description": "keeps a relative path with no query (nothing to sanitize)",
@@ -135,9 +240,64 @@
 		"expected": "https://wordpress.com/?next=%2Fwp-admin%2F"
 	},
 	{
+		"description": "sanitizes an unencoded ? in a top-level value",
+		"input": "https://wordpress.com/?tab=a?extra=1&ref=b",
+		"expected": "https://wordpress.com/?tab=a&ref=b"
+	},
+	{
+		"description": "sanitizes a value that is only ?",
+		"input": "https://wordpress.com/?query=%3F&tab=a",
+		"expected": "https://wordpress.com/?query=&tab=a"
+	},
+	{
+		"description": "sanitizes a query hidden under more encoding in what is left after sanitizing",
+		"input": "https://wordpress.com/?next=a%253Fextra%253D1%3FnotAllowed%3D1&tab=b",
+		"expected": "https://wordpress.com/?next=a&tab=b"
+	},
+	{
+		"description": "drops a value whose query is hidden behind a decode failure in what is left after sanitizing",
+		"input": "https://wordpress.com/?next=a%25%253Fextra%3FnotAllowed%3D1&tab=b",
+		"expected": "https://wordpress.com/?tab=b"
+	},
+	{
+		"description": "sanitizes a query hidden under more encoding in a nested URL with no ?",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F%253Ftab%253Da%2526extra%253D1",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F%3Ftab%3Da"
+	},
+	{
+		"description": "keeps other encoding in the path of a nested URL with no ?",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fcaf%25C3%25A9",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fcaf%25C3%25A9"
+	},
+	{
+		"description": "sanitizes a nested URL with no scheme",
+		"input": "https://wordpress.com/?redirect_to=wordpress.com%2Fcheckout%3Ftab%3Da%26extra%3D1",
+		"expected": "https://wordpress.com/?redirect_to=wordpress.com%2Fcheckout%3Ftab%3Da"
+	},
+	{
+		"description": "sanitizes a nested relative URL that does not start with /",
+		"input": "https://wordpress.com/?next=checkout%3Fextra%3D1",
+		"expected": "https://wordpress.com/?next=checkout"
+	},
+	{
+		"description": "sanitizes a nested URL with leading whitespace",
+		"input": "https://wordpress.com/?redirect_to=%20https%3A%2F%2Fexample.com%2F%3Fextra%3D1",
+		"expected": "https://wordpress.com/?redirect_to=%20https%3A%2F%2Fexample.com%2F"
+	},
+	{
+		"description": "sanitizes a nested URL with a single slash after the scheme",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2Fexample.com%2F%3Fextra%3D1",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2Fexample.com%2F"
+	},
+	{
 		"description": "accepted limitation: a non-URL value containing an encoded & is kept",
 		"input": "https://wordpress.com/?ref=a%26notAllowed%3D1",
 		"expected": "https://wordpress.com/?ref=a%26notAllowed%3D1"
+	},
+	{
+		"description": "accepted limitation: ; is not a param separator",
+		"input": "https://wordpress.com/?tab=a;extra=1",
+		"expected": "https://wordpress.com/?tab=a;extra=1"
 	},
 	{
 		"description": "sanitizes the query of a nested URL",
@@ -153,6 +313,31 @@
 		"description": "removes the ? of a nested URL when every nested param is dropped",
 		"input": "https://wordpress.com/?redirect_to=HTTPS%3A%2F%2FExample.com%2F%3FnotAllowed%3D1",
 		"expected": "https://wordpress.com/?redirect_to=HTTPS%3A%2F%2FExample.com%2F"
+	},
+	{
+		"description": "removes userinfo from a nested URL",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fname%3Aextra%40example.com%2F%3Ftab%3Da%26extra%3D1",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2F%3Ftab%3Da"
+	},
+	{
+		"description": "removes userinfo from a nested URL with no query",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fname%40example.com%2Fplans",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fplans"
+	},
+	{
+		"description": "removes userinfo from a nested protocol-relative URL with no query",
+		"input": "https://wordpress.com/?next=%2F%2Fname%40example.com%2Fplans",
+		"expected": "https://wordpress.com/?next=%2F%2Fexample.com%2Fplans"
+	},
+	{
+		"description": "removes double-encoded userinfo from a nested URL",
+		"input": "https://wordpress.com/?redirect_to=https%3A%2F%2Fname%253Aextra%2540example.com%2Fplans",
+		"expected": "https://wordpress.com/?redirect_to=https%3A%2F%2Fexample.com%2Fplans"
+	},
+	{
+		"description": "does not treat @ in a nested URL with no scheme or // as userinfo",
+		"input": "https://wordpress.com/?next=name%40example.com%2Fcheckout%3Fextra%3D1",
+		"expected": "https://wordpress.com/?next=name%40example.com%2Fcheckout"
 	},
 	{
 		"description": "sanitizes a relative nested URL with a query",
@@ -243,5 +428,20 @@
 		"description": "drops a value that is still changing after maxDecodes",
 		"input": "https://wordpress.com/?query=%2525252525252525252525&tab=a",
 		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "sanitizes a URL-shaped layer found before maxDecodes even if deeper layers keep changing",
+		"input": "https://wordpress.com/?utm_x=%252525252525252525252F%3Fextra%3D1%26tab%3Da",
+		"expected": "https://wordpress.com/?utm_x=%252525252525252525252F%3Ftab%3Da"
+	},
+	{
+		"description": "drops a value whose encoded ? appears after maxDecodes decodes and then fails to decode",
+		"input": "https://wordpress.com/?query=a%252525252525252525253F%25252525252525252525zz&tab=a",
+		"expected": "https://wordpress.com/?tab=a"
+	},
+	{
+		"description": "keeps a value that fails to decode after maxDecodes decodes with no ?",
+		"input": "https://wordpress.com/?query=a%25252525252525252525zz",
+		"expected": "https://wordpress.com/?query=a%25252525252525252525zz"
 	}
 ]

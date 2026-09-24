@@ -32,7 +32,9 @@
 	},
 	"scripts": {
 		"test": "phpunit",
-		"lint:compat": "phpcs -p --standard=PHPCompatibility --runtime-set testVersion 7.2- php/src php/tests"
+		"lint:compat": "phpcs -p --standard=PHPCompatibility --runtime-set testVersion 7.2- php/src php/generated php/bin php/tests",
+		"build:config": "php php/bin/build-config.php",
+		"parity:check": "php php/bin/parity-check.php"
 	},
 	"config": {
 		"allow-plugins": {

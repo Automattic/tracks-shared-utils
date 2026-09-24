@@ -10,6 +10,18 @@ namespace Automattic\TracksSharedUtils;
  * @internal Use sanitize_url() instead.
  */
 final class Sanitizer {
+	/** The start of a URL with an authority: `scheme://` or protocol-relative `//`. */
+	private const AUTHORITY_START = '#^(?:[A-Za-z][A-Za-z0-9+.-]*:)?//#';
+
+	/**
+	 * An authority's userinfo: everything up to its last `@`, including a
+	 * percent-encoded `@` (`%40`, `%2540`, …) left by double encoding.
+	 */
+	private const USERINFO = '/^.*(?:@|%(?:25)*40)/is';
+
+	/** A `?` percent-encoded one or more times (`%3F`, `%253F`, …). */
+	private const ENCODED_QUESTION_MARK = '/%(?:25)*3F/i';
+
 	/** @var array<string, true>|null Lowercased exact names. */
 	private static $exact_names = null;
 
@@ -63,8 +75,24 @@ final class Sanitizer {
 	}
 
 	private static function is_url_shaped( string $s ): bool {
-		return 1 === preg_match( '#^[A-Za-z][A-Za-z0-9+.-]*://#', $s )
-			|| ( '/' === substr( $s, 0, 1 ) && false !== strpos( $s, '?' ) );
+		return 1 === preg_match( self::AUTHORITY_START, $s )
+			|| false !== strpos( $s, '?' );
+	}
+
+	/**
+	 * Removes `userinfo@` from the authority of a URL's base (the part before any `?`).
+	 */
+	private static function strip_userinfo( string $base ): string {
+		if ( 1 !== preg_match( self::AUTHORITY_START, $base, $match ) ) {
+			return $base;
+		}
+		$start     = strlen( $match[0] );
+		$slash     = strpos( $base, '/', $start );
+		$authority = false === $slash ? (string) substr( $base, $start ) : substr( $base, $start, $slash - $start );
+		if ( 1 !== preg_match( self::USERINFO, $authority, $userinfo ) ) {
+			return $base;
+		}
+		return substr( $base, 0, $start ) . substr( $base, $start + strlen( $userinfo[0] ) );
 	}
 
 	private static function is_allowed_name( string $raw_name ): bool {
@@ -82,47 +110,41 @@ final class Sanitizer {
 	}
 
 	/**
+	 * @param int $min_k The first layer that may be treated as a URL. Rechecks
+	 *                   pass 2 to skip the layer they already sanitized.
 	 * @return string|null The value to output, or null to drop the param.
 	 */
-	private static function sanitize_value( string $raw_value, int $depth ) {
-		// $chain[ $i ] is the value after $i decodes.
-		$chain = array( $raw_value );
-		while ( count( $chain ) - 1 < self::$max_decodes ) {
-			$last = $chain[ count( $chain ) - 1 ];
-			$next = self::decode( $last );
+	private static function sanitize_value( string $raw_value, int $depth, int $min_k = 1 ) {
+		// Decode one layer at a time. $next is the value after $k decodes.
+		$layer = $raw_value;
+		for ( $k = 1; ; $k++ ) {
+			$next = self::decode( $layer );
 			if ( null === $next ) {
-				break;
+				// Decoding stopped early, so a query may be hidden in what's left.
+				return self::is_url_shaped( $layer ) || preg_match( self::ENCODED_QUESTION_MARK, $layer ) ? null : $raw_value;
 			}
-			$chain[] = $next;
-			if ( $next === $last ) {
-				break;
+			if ( $k > self::$max_decodes ) {
+				// Still changing after the decode cap: too deeply encoded to reason about.
+				return $next === $layer ? $raw_value : null;
 			}
-		}
-
-		// Still changing after the decode cap: too deeply encoded to reason about.
-		if ( count( $chain ) - 1 === self::$max_decodes ) {
-			$last = $chain[ self::$max_decodes ];
-			$next = self::decode( $last );
-			if ( null !== $next && $next !== $last ) {
-				return null;
+			if ( $k >= $min_k && self::is_url_shaped( $next ) ) {
+				if ( $depth + $k > self::$max_depth ) {
+					return null;
+				}
+				$sanitized = self::sanitize_at_depth( $next, $depth + $k );
+				// With no `?` left, a query may still be hidden under more encoding
+				// (`a%3Fextra%3D1`, `https://a.com/%3Fextra%3D1`). Check the layers below.
+				$recheck = false === strpos( $sanitized, '?' )
+					&& ( ! self::is_url_shaped( $sanitized ) || preg_match( self::ENCODED_QUESTION_MARK, $sanitized ) );
+				return $recheck
+					? self::sanitize_value( rawurlencode( $sanitized ), $depth + $k - 1, 2 )
+					: rawurlencode( $sanitized );
 			}
-		}
-
-		$count = count( $chain );
-		for ( $k = 1; $k < $count; $k++ ) {
-			if ( self::is_url_shaped( $chain[ $k ] ) ) {
-				return $depth + $k <= self::$max_depth
-					? rawurlencode( self::sanitize_at_depth( $chain[ $k ], $depth + $k ) )
-					: null;
+			if ( $next === $layer ) {
+				return $raw_value;
 			}
+			$layer = $next;
 		}
-
-		// An unencoded URL we can't decode can't be safely parsed.
-		if ( 1 === $count && self::is_url_shaped( $raw_value ) ) {
-			return null;
-		}
-
-		return $raw_value;
 	}
 
 	private static function sanitize_at_depth( string $url, int $depth ): string {
@@ -131,9 +153,9 @@ final class Sanitizer {
 
 		$q = strpos( $without_fragment, '?' );
 		if ( false === $q ) {
-			return $without_fragment;
+			return self::strip_userinfo( $without_fragment );
 		}
-		$base = substr( $without_fragment, 0, $q );
+		$base = self::strip_userinfo( substr( $without_fragment, 0, $q ) );
 
 		$kept = array();
 		foreach ( explode( '&', (string) substr( $without_fragment, $q + 1 ) ) as $segment ) {
