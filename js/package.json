@@ -1,6 +1,6 @@
 {
 	"name": "@automattic/tracks-shared-utils",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Shared allowlist and sanitization for URLs sent to Tracks.",
 	"license": "GPL-2.0-or-later",
 	"homepage": "https://github.com/Automattic/tracks-shared-utils#readme",
