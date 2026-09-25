@@ -14,10 +14,12 @@ final class Sanitizer {
 	private const AUTHORITY_START = '#^(?:[A-Za-z][A-Za-z0-9+.-]*:)?//#';
 
 	/**
-	 * An authority's userinfo: everything up to its last `@`, including a
-	 * percent-encoded `@` (`%40`, `%2540`, …) left by double encoding.
+	 * An `@`, or a percent-encoded `@` (`%40`, `%2540`, …) left by double
+	 * encoding, written backwards. Matched against the reversed authority to
+	 * find the last one without backtracking, which JS's `/^[\s\S]*(?:@|…)/`
+	 * would need and which fails past PCRE's backtrack limit on long input.
 	 */
-	private const USERINFO = '/^.*(?:@|%(?:25)*40)/is';
+	private const REVERSED_USERINFO_END = '/@|04(?:52)*%/';
 
 	/** A `?` percent-encoded one or more times (`%3F`, `%253F`, …). */
 	private const ENCODED_QUESTION_MARK = '/%(?:25)*3F/i';
@@ -89,10 +91,12 @@ final class Sanitizer {
 		$start     = strlen( $match[0] );
 		$slash     = strpos( $base, '/', $start );
 		$authority = false === $slash ? (string) substr( $base, $start ) : substr( $base, $start, $slash - $start );
-		if ( 1 !== preg_match( self::USERINFO, $authority, $userinfo ) ) {
+		if ( 1 !== preg_match( self::REVERSED_USERINFO_END, strrev( $authority ), $end, PREG_OFFSET_CAPTURE ) ) {
 			return $base;
 		}
-		return substr( $base, 0, $start ) . substr( $base, $start + strlen( $userinfo[0] ) );
+		// The userinfo runs up to and including the last delimiter.
+		$userinfo_length = strlen( $authority ) - $end[0][1];
+		return substr( $base, 0, $start ) . substr( $base, $start + $userinfo_length );
 	}
 
 	private static function is_allowed_name( string $raw_name ): bool {
