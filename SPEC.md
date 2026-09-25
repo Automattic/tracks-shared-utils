@@ -59,62 +59,65 @@ The public `sanitizeUrl( url )` is `sanitizeAtDepth( url, 0 )`.
 
 ### `sanitizeValue( rawValue, depth, minK )`
 
-Sanitizes one param value. The value may be a URL under any number of layers of percent-encoding, so it is decoded one layer at a time and each layer is checked as soon as it's decoded. The result is either a string to output or *drop*.
-
-When in doubt, it fails closed: if a query might be hidden in the value and can't be sanitized, the value is dropped.
-
-`minK` is 1 except in the [recheck](#rechecking-for-a-hidden-query) below.
+This decides what happens to one param value: it is kept as written, replaced with a sanitized URL, or dropped.
 
 #### Layers
 
-Start from `v0 = rawValue`. For `k = 1, 2, …`, let `vk = decode( v(k-1) )`, so `vk` is the value after `k` decodes. Run these checks in order. The first one that applies decides the result. If none applies, go on to the next `k`.
+A value can be encoded more than once. Each round of encoding wraps the value in another layer. For example, `https%253A%252F%252Fa.com` has two layers. Peel one and you get `https%3A%2F%2Fa.com`. Peel another and you get `https://a.com`. Peeling a layer means [decoding](#decoding) it once.
 
-1. **Decoding fails.** Nothing below `v(k-1)` can be seen, so a query may be hidden there. If `v(k-1)` is URL-shaped or contains a percent-encoded `?` at any depth (matches `/%(25)*3F/i`), return *drop*. Otherwise return `rawValue` unchanged. This covers an unencoded URL with a malformed `%` in it, and an encoded URL whose query is hidden behind a malformed `%`.
-2. **`k > maxDecodes`.** If `vk` differs from `v(k-1)`, the value is too deeply encoded to reason about: return *drop*. Otherwise return `rawValue` unchanged.
-3. **`k >= minK` and `vk` is [URL-shaped](#url-shaped).** A URL was found at depth `depth + k`:
-   1. If `depth + k > maxDepth`, return *drop*.
-   2. Let `sanitized = sanitizeAtDepth( vk, depth + k )`.
-   3. If `sanitized` [needs a recheck](#rechecking-for-a-hidden-query), return `sanitizeValue( encode( sanitized ), depth + k - 1, 2 )`.
-   4. Otherwise return `encode( sanitized )`.
-4. **`vk` equals `v(k-1)`.** The value is fully decoded and no layer was URL-shaped: return `rawValue` unchanged.
+The value as it's written in the query string is the outermost layer. `sanitizeValue` peels one layer at a time and checks each new layer as soon as it's uncovered. Below, the **current layer** is the one just uncovered, the **layer above** is the one it was peeled from, and the **layer below** is the one that peeling the current layer would uncover.
 
-Because each layer is checked as soon as it's decoded, a URL-shaped layer is sanitized even if the layers below it are malformed or keep changing past `maxDecodes`. `v1` is checked even when it's unchanged from `v0`, so an unencoded value like `https://a.com/?extra=1` is found at `k = 1`, before check 4 can end the loop.
+When in doubt, the value is dropped. If a query might be hiding somewhere in the value and it can't be sanitized, the whole value goes.
 
-#### Rechecking for a hidden query
+#### Peeling
 
-`sanitizeAtDepth` only acts on a literal `?`. Once it has run, another query may still be hidden one or more encoding layers further down. `sanitized` needs a recheck when:
+Peel a layer, then ask these questions about the current layer, in order. Stop at the first one that gives an answer. If none does, peel the next layer and ask again.
 
-- it contains no literal `?`, and
-- it is not URL-shaped, or it contains a percent-encoded `?` (`/%(25)*3F/i`).
+1. **Did peeling fail?** Peeling fails on a `%` that isn't followed by two hex digits, or on invalid UTF-8. Nothing further down can be seen, so a query may be hiding there. If the layer above looks like a URL ([URL-shaped](#url-shaped)), or contains an encoded `?` (`%3F`, `%253F` and so on, matched by `/%(25)*3F/i`), drop the value. Otherwise keep the value as written. This catches both a plain URL with a broken `%` in it and an encoded URL whose query sits behind a broken `%`.
+2. **Have more than `maxDecodes` (10) layers been peeled?** If the current layer is still different from the layer above, the value is too deeply encoded to reason about, so drop it. Otherwise keep the value as written.
+3. **Does the current layer look like a URL?**
+   1. If it's deeper than `maxDepth` (see [Depth](#depth)), drop the value.
+   2. Otherwise sanitize it as a URL with `sanitizeAtDepth`. That also sanitizes any URLs nested inside it.
+   3. If a query might still be hiding in a layer below the sanitized URL, [look below it](#looking-below-a-sanitized-url).
+   4. Otherwise encode the sanitized URL once and output it.
+4. **Is the current layer the same as the layer above?** Then peeling changed nothing: the value is fully decoded and no layer looked like a URL. Keep the value as written.
 
-For example:
+The first layer is checked for a URL even if peeling didn't change it, so a plain `https://a.com/?extra=1` is caught straight away. Each layer is checked as soon as it's uncovered, so a URL is sanitized even if the layers below it are broken or never stop changing.
 
-- `vk = a%3Fextra%3D1?notAllowed=1` is URL-shaped only because of its `?`. Sanitizing it gives `a%3Fextra%3D1`, which is no longer URL-shaped but decodes to `a?extra=1`.
-- `vk = https://a.com/%3Fextra%3D1` has no literal `?`, so sanitizing leaves it as it is. Its encoded `?` decodes to `https://a.com/?extra=1`.
+#### Depth
 
-The recheck is `sanitizeValue( encode( sanitized ), depth + k - 1, 2 )`. Each argument has a job:
+Depth counts how many layers down a URL sits. The URL passed to `sanitizeUrl` is at depth 0. Each layer peeled from one of its param values goes one level deeper, and the same goes for URLs nested inside those.
 
-- `encode( sanitized )` wraps `sanitized` in one layer, so the recursive call's `v1` is `sanitized` itself.
-- `minK = 2` skips checking `v1`, which was just sanitized, and starts at `v2`, the first layer below `sanitized`.
-- `depth + k - 1` makes up for the extra layer: `v1` lands at depth `depth + k`, the same as `sanitized`, and `v2` at `depth + k + 1`.
+In a properly encoded chain of nested URLs, each URL is one level below the URL that contains it, so the chain sits at depths 1, 2 and 3. A double-encoded URL in a top-level param takes two peels to uncover, so it's already at depth 2. A URL found deeper than `maxDepth` (3) is dropped.
 
-Each recheck goes at least one layer deeper, so the `maxDepth` check ends it within `maxDepth` layers.
+#### Looking below a sanitized URL
+
+`sanitizeAtDepth` only acts on a real `?`. After it runs, a query can still be hiding in a layer below, behind an encoded `?`:
+
+- `a%3Fextra%3D1?notAllowed=1` looks like a URL only because of its real `?`. Sanitizing it leaves `a%3Fextra%3D1`, which no longer looks like a URL. But the layer below is `a?extra=1`.
+- `https://a.com/%3Fextra%3D1` has no real `?`, so sanitizing leaves it as it is. But the layer below is `https://a.com/?extra=1`.
+
+So look below when the sanitized URL has no real `?` left, and it either no longer looks like a URL or still contains an encoded `?`.
+
+Looking below means treating the sanitized URL as the current layer and carrying on [peeling](#peeling) from there, one level deeper each time. The sanitized URL itself isn't checked again. Whatever turns up decides the output. If nothing below looks like a URL, the output is the sanitized URL, encoded once.
+
+Each look below goes at least one layer deeper, so the depth limit guarantees it ends.
+
+**Port notes:** `depth` is the depth of the URL the value belongs to. `minK` is the first layer that step 3 checks, normally 1. Looking below is the call `sanitizeValue( encode( sanitized ), depth + k - 1, 2 )`, where `k` is the number of layers peeled to reach the URL. Encoding `sanitized` makes it the first layer that call peels. `minK = 2` skips checking it again. `depth + k - 1` keeps it at its own depth, so the layer below it is one level deeper.
 
 #### Output
 
-Values that are not URLs are passed through without any change. Values that are URLs are re-encoded exactly once, however many layers the input had, so double-encoded input comes out single-encoded and the output may not match the input byte-for-byte. The original proposal accepts this.
-
-Every decode counts as one layer toward `maxDepth`. A properly encoded chain of nested URLs therefore sits at depths 1, 2 and 3. A double-encoded URL at the top level is already at depth 2.
+A value that isn't a URL is kept exactly as written. A URL is encoded exactly once, however many layers it had, so a double-encoded URL comes out single-encoded and may not match the input byte-for-byte. The original proposal accepts this.
 
 `sanitizeUrl` is idempotent: sanitizing its output returns the output unchanged.
 
-| `rawValue` at depth 0 | Output |
+| Value of a top-level param | Output |
 | --- | --- |
-| `hello%20world` | `hello%20world` (not a URL, unchanged) |
+| `hello%20world` | `hello%20world` (not a URL, kept as written) |
 | `https%3A%2F%2Fa.com%2F%3Fextra%3D1%26utm_source%3Dz` | `https%3A%2F%2Fa.com%2F%3Futm_source%3Dz` |
-| `https%253A%252F%252Fa.com%252F%253Fextra%253D1` | `https%3A%2F%2Fa.com%2F` (found at depth 2, re-encoded once) |
-| `https%3A%2F%2Fa.com%2F%253Fextra%253D1` | `https%3A%2F%2Fa.com%2F` (found by the recheck) |
-| `a%253Fextra%253D1%3FnotAllowed%3D1` | `a` (found by the recheck) |
+| `https%253A%252F%252Fa.com%252F%253Fextra%253D1` | `https%3A%2F%2Fa.com%2F` (found at depth 2, encoded once) |
+| `https%3A%2F%2Fa.com%2F%253Fextra%253D1` | `https%3A%2F%2Fa.com%2F` (found by looking below) |
+| `a%253Fextra%253D1%3FnotAllowed%3D1` | `a` (found by looking below) |
 
 ### URL-shaped
 
