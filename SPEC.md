@@ -140,7 +140,9 @@ Only a `base` with an authority (see [URL-shaped](#url-shaped)) has userinfo. Th
 
 An `@` in the path or query (`/name@example.com?ref=a@b`) is left alone. So is one in a value with no authority, such as `name@example.com/checkout`, where it's ambiguous whether `name@` is userinfo or part of a path.
 
-Port notes: match the authority's userinfo with `/^[\s\S]*(?:@|%(?:25)*40)/i` (JS) or `/^.*(?:@|%(?:25)*40)/is` (PHP). The greedy match ends at the last delimiter.
+Port notes:
+- **JS:** match the authority's userinfo with `/^[\s\S]*(?:@|%(?:25)*40)/i`. The greedy match ends at the last delimiter.
+- **PHP:** a greedy regex backtracks once per byte, and past `pcre.backtrack_limit` (1,000,000 by default) `preg_match()` fails and the userinfo would be kept. Instead, find the first match of `/@|04(?:52)*%/` (the delimiter written backwards) in `strrev( $authority )`. The userinfo is the first `strlen( $authority ) - offset` bytes.
 
 ### Decoding
 

@@ -50,6 +50,17 @@ final class SanitizeUrlTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Longer than PCRE's default backtrack limit (1,000,000). Too big for
+	 * test-cases.json, but JS handles it the same way.
+	 */
+	public function test_strips_userinfo_from_a_very_long_authority() {
+		$host = str_repeat( 'a', 2000000 );
+		$this->assertSame( "https://$host/", sanitize_url( "https://name@$host/" ) );
+		$this->assertSame( "https://$host/", sanitize_url( "https://name%2540$host/" ) );
+		$this->assertSame( "https://$host", sanitize_url( "https://name:extra@$host@$host" ) );
+	}
+
 	public function test_generated_config_matches_the_shared_json() {
 		$this->assertSame( self::load_json( 'url-sanitization.json' ), Config::get() );
 	}
